@@ -1,0 +1,15 @@
+{
+  "name": "@md/render-api",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Markdown to HTML rendering API service",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@md/core": "workspace:*",
+    "tsx": "^4.19.2"
+  }
+}
