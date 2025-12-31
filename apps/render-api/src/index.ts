@@ -6,6 +6,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { initRenderer } from '@md/core/renderer'
 import { modifyHtmlContent } from '@md/core/utils'
+import juice from 'juice'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const port = Number(process.env.PORT ?? 8787)
@@ -57,6 +58,7 @@ interface StyleOptions {
   lineHeight?: string
   codeTheme?: string
   wechatCompatible?: boolean
+  inlineStyles?: boolean // 使用 juice 内联 CSS 到元素 style 属性
 }
 
 interface RequestBody {
@@ -133,6 +135,63 @@ function replaceWechatVariables(html: string, styleOptions: StyleOptions): strin
       const base = Number.parseFloat(fontSize)
       return `${base * Number.parseFloat(multiplier)}px`
     })
+}
+
+/**
+ * 使用 juice 将 CSS 内联到 HTML 元素的 style 属性
+ */
+function inlineCSSWithJuice(html: string): string {
+  return juice(html, {
+    inlinePseudoElements: true,
+    preserveImportant: true,
+    resolveCSSVariables: false,
+  })
+}
+
+/**
+ * 修改 HTML 结构以适配微信公众号
+ * - 将 li > ul/ol 移到 li 后面（微信对嵌套列表支持差）
+ * - 处理图片尺寸属性
+ */
+function modifyHtmlStructureForWechat(html: string): string {
+  // 将 li > ul 和 li > ol 移到 li 后面
+  // 使用正则简单处理，因为 Node.js 没有 DOM API
+  let result = html
+
+  // 处理图片 width/height 属性转为内联样式
+  result = result.replace(
+    /<img([^>]*)\swidth="(\d+)"([^>]*)>/g,
+    (match, before, width, after) => {
+      const hasStyle = /style="/.test(before + after)
+      if (hasStyle) {
+        return match.replace(/style="/, `style="width: ${width}px; `)
+      }
+      return `<img${before} style="width: ${width}px;"${after}>`
+    },
+  )
+
+  result = result.replace(
+    /<img([^>]*)\sheight="(\d+)"([^>]*)>/g,
+    (match, before, height, after) => {
+      const hasStyle = /style="/.test(before + after)
+      if (hasStyle) {
+        return match.replace(/style="/, `style="height: ${height}px; `)
+      }
+      return `<img${before} style="height: ${height}px;"${after}>`
+    },
+  )
+
+  // 移除 width/height 属性（已转为内联样式）
+  result = result.replace(/<img([^>]*)\swidth="\d+"([^>]*)>/g, '<img$1$2>')
+  result = result.replace(/<img([^>]*)\sheight="\d+"([^>]*)>/g, '<img$1$2>')
+
+  // 修复 Mermaid tspan 文本颜色
+  result = result.replace(
+    /<tspan([^>]*)>/g,
+    '<tspan$1 style="fill: #333333 !important; color: #333333 !important; stroke: none !important;">',
+  )
+
+  return result
 }
 
 function buildFullHTML(
@@ -224,6 +283,18 @@ ${scopedCSS}
   // 微信兼容模式：替换所有 CSS 变量为实际值
   if (wechatCompatible) {
     html = replaceWechatVariables(html, styleOptions)
+  }
+
+  // 内联样式模式：使用 juice 将 CSS 内联到元素 style 属性
+  const { inlineStyles = false } = styleOptions
+  if (inlineStyles) {
+    html = inlineCSSWithJuice(html)
+    // 内联后进行微信适配处理
+    html = modifyHtmlStructureForWechat(html)
+    // 再次替换可能残留的 CSS 变量
+    if (wechatCompatible) {
+      html = replaceWechatVariables(html, styleOptions)
+    }
   }
 
   return html

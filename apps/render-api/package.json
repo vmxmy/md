@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@md/core": "workspace:*",
+    "juice": "^11.0.0",
     "tsx": "^4.19.2"
   }
 }
